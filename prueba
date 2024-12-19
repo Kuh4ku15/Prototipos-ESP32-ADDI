@@ -1,0 +1,63 @@
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <UniversalTelegramBot.h>
+#include <HTTPClient.h>
+
+const char* ssid = "AP_asix";
+const char* password = "AP_asix2023";
+
+#define BOTtoken "7892811083:AAF1WMzQ5nRbn1STBLAMthPANmwhP6lI1Hg"
+#define CHAT_ID "1499811871"
+
+WiFiClientSecure client;
+UniversalTelegramBot bot(BOTtoken, client);
+
+const int motionSensor = 27; 
+bool motionDetected = false;
+
+void IRAM_ATTR detectsMovement() {
+  motionDetected = true;
+}
+
+void sendPhoto() {
+  HTTPClient http;
+  http.begin("http://<ESP32-CAM-IP>/capture"); // Cambia <ESP32-CAM-IP> por la IP del ESP32-CAM
+  int httpCode = http.GET();
+
+  if (httpCode == HTTP_CODE_OK) {
+    WiFiClient *stream = http.getStreamPtr();
+    bot.sendPhotoByBinary(CHAT_ID, "image/jpeg", stream->available(), []() { return stream->read(); });
+  } else {
+    Serial.println("Error capturing image");
+  }
+  http.end();
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(motionSensor, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(motionSensor), detectsMovement, RISING);
+
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  client.setCACert(TELEGRAM_CERTIFICATE_ROOT);
+  bot.sendMessage(CHAT_ID, "Bot iniciado", "");
+}
+
+void loop() {
+  if (motionDetected) {
+    bot.sendMessage(CHAT_ID, "Movimiento detectado!!", "");
+    sendPhoto();
+    motionDetected = false;
+  }
+
+  int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+  while (numNewMessages) {
+    numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+  }
+}
